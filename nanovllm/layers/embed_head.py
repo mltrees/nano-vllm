@@ -58,19 +58,25 @@ class ParallelLMHead(VocabParallelEmbedding):
         embedding_dim: int,
         bias: bool = False,
     ):
-        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(ParallelLMHead)")
         assert not bias
         super().__init__(num_embeddings, embedding_dim)
 
     def forward(self, x: torch.Tensor):
         print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         context = get_context()
+        print(f": zml: context.is_prefill={context.is_prefill}, x.shape={x.shape}")
         if context.is_prefill:
             last_indices = context.cu_seqlens_q[1:] - 1
+            print(f"zml: last_indices={last_indices}")
             x = x[last_indices].contiguous()
+        print(f": zml: 2. context.is_prefill={context.is_prefill}, x.shape={x.shape}")
         logits = F.linear(x, self.weight)
+        print(f": zml: len(logits)={len(logits)}")
+        print(f": zml: self.tp_size={self.tp_size}")
         if self.tp_size > 1:
             all_logits = [torch.empty_like(logits) for _ in range(self.tp_size)] if self.tp_rank == 0 else None
             dist.gather(logits, all_logits, 0)
             logits = torch.cat(all_logits, -1) if self.tp_rank == 0 else None
+        print(f": zml: 2. len(logits)={len(logits)}")
         return logits

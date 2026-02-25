@@ -240,7 +240,7 @@ class ModelRunner:
         temperatures = self.prepare_sample(seqs) if self.rank == 0 else None
         print(f"zml: temperatures={temperatures}")
         logits = self.run_model(input_ids, positions, is_prefill)
-        print(f"len(logits)={len(logits)}")
+        print(f"zml: len(logits)={len(logits)}")
         token_ids = self.sampler(logits, temperatures).tolist() if self.rank == 0 else None
         reset_context()
         return token_ids
