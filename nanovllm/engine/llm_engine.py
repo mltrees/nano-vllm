@@ -55,14 +55,15 @@ class LLMEngine:
             for i in range(0,len(seqs)):
                 print(f"zml: i={i}, len(seq)={len(seqs[i])},seq={seqs[i].debug()}")
         ## zml add for debug ###########
-        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}, line:{sys._getframe().f_lineno}")
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         token_ids = self.model_runner.call("run", seqs, is_prefill)
         ## zml add for debug ###########
         if True:
             print(f"zml: after runner, len(token_ids)={len(token_ids)}, len(seqs)={len(seqs)}")
             for i in range(0,len(token_ids)):
                 print(f"zml: i={i}, len(token_ids)={len(token_ids)},token_ids={token_ids[i]}")
-            
+            for i in range(0,len(seqs)):
+                print(f"zml: i={i}, len(seq)={len(seqs[i])},seq={seqs[i].debug()}")
         ## zml add for debug ###########
         self.scheduler.postprocess(seqs, token_ids)
         ## zml add for debug ###########
@@ -109,7 +110,7 @@ class LLMEngine:
         while not self.is_finished():
             t = perf_counter()
             output, num_tokens = self.step()
-            print(f"zml: after step, len(output)={len(output)}, num_tokens={num_tokens}")
+            print(f"zml: after step, len(output)={len(output)}, num_tokens={num_tokens}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
             if use_tqdm:
                 if num_tokens > 0:
                     prefill_throughput = num_tokens / (perf_counter() - t)

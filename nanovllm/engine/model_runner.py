@@ -46,7 +46,7 @@ class ModelRunner:
         print(third_block)
         ###############################
         self.sampler = Sampler()
-        self.warmup_model()
+        # self.warmup_model()  # zml commit, close warm_up
         self.allocate_kv_cache()
         if not self.enforce_eager:
             self.capture_cudagraph()
@@ -129,13 +129,18 @@ class ModelRunner:
         head_dim = getattr(hf_config, "head_dim", hf_config.hidden_size // hf_config.num_attention_heads)
         block_bytes = 2 * hf_config.num_hidden_layers * self.block_size * num_kv_heads * head_dim * hf_config.torch_dtype.itemsize
         config.num_kvcache_blocks = int(total * config.gpu_memory_utilization - used - peak + current) // block_bytes
+        print(f"zml: in allocate_kv_cache, free={free}, total={total}, hf_config.num_hidden_layers={hf_config.num_hidden_layers}, self.block_size={self.block_size},\
+              num_kv_heads={num_kv_heads}, head_dim={head_dim}, hf_config.torch_dtype.itemsize={hf_config.torch_dtype.itemsize}")
+        print(f"zml: block_bytes={block_bytes}, config.num_kvcache_blocks={config.num_kvcache_blocks}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         assert config.num_kvcache_blocks > 0
         self.kv_cache = torch.empty(2, hf_config.num_hidden_layers, config.num_kvcache_blocks, self.block_size, num_kv_heads, head_dim)
+        print(f"zml: in model_runner.py, self.kv_cache.shape={self.kv_cache.shape}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         layer_id = 0
         for module in self.model.modules():
             if hasattr(module, "k_cache") and hasattr(module, "v_cache"):
                 module.k_cache = self.kv_cache[0, layer_id]
                 module.v_cache = self.kv_cache[1, layer_id]
+                print(f"zml: module.k_cache.shape={module.k_cache.shape}, module.v_cache.shape={module.v_cache.shape}, layer_id={layer_id}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
                 layer_id += 1
 
     def prepare_block_tables(self, seqs: list[Sequence]):
@@ -215,7 +220,7 @@ class ModelRunner:
     def run_model(self, input_ids: torch.Tensor, positions: torch.Tensor, is_prefill: bool):
         print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         if is_prefill or self.enforce_eager or input_ids.size(0) > 512:
-            print(f"zml: is_prefill={is_prefill}, self.enforce_eager={self.enforce_eager},input_ids.size(0)={input_ids.size(0)}")
+            print(f"zml: is_prefill={is_prefill}, self.enforce_eager={self.enforce_eager},input_ids.size(0)={input_ids.size(0)}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name}")
             return self.model.compute_logits(self.model(input_ids, positions))
         else:
             bs = input_ids.size(0)
@@ -236,11 +241,11 @@ class ModelRunner:
     def run(self, seqs: list[Sequence], is_prefill: bool) -> list[int]:
         print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         input_ids, positions = self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
-        print(f"zml: len(input_ids)={len(input_ids)}, len(positions)={len(positions)}, input_ids={input_ids}, positions={positions}")
+        print(f"zml: len(input_ids)={len(input_ids)}, len(positions)={len(positions)}, input_ids={input_ids}, positions={positions}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name}")
         temperatures = self.prepare_sample(seqs) if self.rank == 0 else None
-        print(f"zml: temperatures={temperatures}")
+        print(f"zml: temperatures={temperatures}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name}")
         logits = self.run_model(input_ids, positions, is_prefill)
-        print(f"zml: len(logits)={len(logits)}")
+        print(f"zml: len(logits)={len(logits)}, {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name}")
         token_ids = self.sampler(logits, temperatures).tolist() if self.rank == 0 else None
         reset_context()
         return token_ids

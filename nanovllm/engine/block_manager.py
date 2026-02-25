@@ -4,20 +4,26 @@ import numpy as np
 
 from nanovllm.engine.sequence import Sequence
 
+import sys
+from pathlib import Path
+
 
 class Block:
 
     def __init__(self, block_id):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         self.block_id = block_id
         self.ref_count = 0
         self.hash = -1
         self.token_ids = []
 
     def update(self, hash: int, token_ids: list[int]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         self.hash = hash
         self.token_ids = token_ids
 
     def reset(self):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         self.ref_count = 1
         self.hash = -1
         self.token_ids = []
@@ -26,6 +32,7 @@ class Block:
 class BlockManager:
 
     def __init__(self, num_blocks: int, block_size: int):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         self.block_size = block_size
         self.blocks: list[Block] = [Block(i) for i in range(num_blocks)]
         self.hash_to_block_id: dict[int, int] = dict()
@@ -34,6 +41,7 @@ class BlockManager:
 
     @classmethod
     def compute_hash(cls, token_ids: list[int], prefix: int = -1):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         h = xxhash.xxh64()
         if prefix != -1:
             h.update(prefix.to_bytes(8, "little"))
@@ -41,6 +49,7 @@ class BlockManager:
         return h.intdigest()
 
     def _allocate_block(self, block_id: int) -> Block:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         block = self.blocks[block_id]
         assert block.ref_count == 0
         block.reset()
@@ -49,14 +58,17 @@ class BlockManager:
         return self.blocks[block_id]
 
     def _deallocate_block(self, block_id: int) -> Block:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         assert self.blocks[block_id].ref_count == 0
         self.used_block_ids.remove(block_id)
         self.free_block_ids.append(block_id)
 
     def can_allocate(self, seq: Sequence) -> bool:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         return len(self.free_block_ids) >= seq.num_blocks
 
     def allocate(self, seq: Sequence):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         assert not seq.block_table
         h = -1
         cache_miss = False
@@ -82,6 +94,7 @@ class BlockManager:
             seq.block_table.append(block_id)
 
     def deallocate(self, seq: Sequence):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         for block_id in reversed(seq.block_table):
             block = self.blocks[block_id]
             block.ref_count -= 1
@@ -91,9 +104,11 @@ class BlockManager:
         seq.block_table.clear()
 
     def can_append(self, seq: Sequence) -> bool:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         return len(self.free_block_ids) >= (len(seq) % self.block_size == 1)
 
     def may_append(self, seq: Sequence):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         block_table = seq.block_table
         last_block = self.blocks[block_table[-1]]
         if len(seq) % self.block_size == 1:

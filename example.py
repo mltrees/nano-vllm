@@ -13,7 +13,8 @@ def main():
     prompts = [
         "introduce yourself",
         "list all prime numbers within 100",
-        "111+234=?"
+        "111+234=?",
+        "list all prime numbers within 100",
     ]
     prompts = [
         tokenizer.apply_chat_template(

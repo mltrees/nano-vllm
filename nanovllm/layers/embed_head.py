@@ -72,8 +72,8 @@ class ParallelLMHead(VocabParallelEmbedding):
             x = x[last_indices].contiguous()
         print(f": zml: 2. context.is_prefill={context.is_prefill}, x.shape={x.shape}")
         logits = F.linear(x, self.weight)
-        print(f": zml: len(logits)={len(logits)}")
-        print(f": zml: self.tp_size={self.tp_size}")
+        print(f"zml: len(logits)={len(logits)}")
+        print(f"zml: self.tp_size={self.tp_size}")
         if self.tp_size > 1:
             all_logits = [torch.empty_like(logits) for _ in range(self.tp_size)] if self.tp_rank == 0 else None
             dist.gather(logits, all_logits, 0)
