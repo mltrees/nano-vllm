@@ -9,7 +9,8 @@ from nanovllm.layers.layernorm import RMSNorm
 from nanovllm.layers.linear import QKVParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from nanovllm.layers.rotary_embedding import get_rope
 from nanovllm.layers.embed_head import VocabParallelEmbedding, ParallelLMHead
-
+import sys
+from pathlib import Path
 
 class Qwen3Attention(nn.Module):
 
@@ -25,6 +26,7 @@ class Qwen3Attention(nn.Module):
         rope_theta: float = 10000,
         rope_scaling: tuple | None = None,
     ) -> None:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         super().__init__()
         tp_size = dist.get_world_size()
         self.total_num_heads = num_heads
@@ -51,6 +53,14 @@ class Qwen3Attention(nn.Module):
             hidden_size,
             bias=False,
         )
+# 在 Qwen3Attention.__init__ 中，get_rope 调用前添加
+        if True:
+            print(f"head_dim: {self.head_dim}, type: {type(self.head_dim)}")
+            print(f"rope_theta: {rope_theta}, type: {type(rope_theta)}")
+            print(f"max_position_embeddings: {max_position}, type: {type(max_position)}")
+            print(f"rope_scaling: {rope_scaling}, type: {type(rope_scaling)}")
+        # 检查是否有其他可能的字典参数
+        #print(f"config attributes: {[k for k, v in config.__dict__.items() if isinstance(v, dict)]}")
         self.rotary_emb = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
@@ -67,23 +77,32 @@ class Qwen3Attention(nn.Module):
         if not self.qkv_bias:
             self.q_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
             self.k_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
 
     def forward(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3Attention)")
         qkv = self.qkv_proj(hidden_states)
+        print(f"zml: qkv.shape={qkv.shape}")
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        print(f"zml: q_split.shape={q.shape}, k_split.shape={k.shape}, v_split.shape={v.shape}")
         q = q.view(-1, self.num_heads, self.head_dim)
         k = k.view(-1, self.num_kv_heads, self.head_dim)
         v = v.view(-1, self.num_kv_heads, self.head_dim)
+        print(f"zml: q_view.shape={q.shape}, k_view.shape={k.shape}, v_view.shape={v.shape}")
         if not self.qkv_bias:
             q = self.q_norm(q)
             k = self.k_norm(k)
-        q, k = self.rotary_emb(positions, q, k)
+        q, k = self.rotary_emb(positions, q, k)  # 获取rope的参数
+        print(f"zml: q_rota={q.shape}, k_rota={k.shape}")
         o = self.attn(q, k, v)
+        print(f"zml: o.shape={o.shape}")
         output = self.o_proj(o.flatten(1, -1))
+        print(f"zml: output.shape={output.shape}")
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
         return output
 
 
@@ -95,6 +114,7 @@ class Qwen3MLP(nn.Module):
         intermediate_size: int,
         hidden_act: str,
     ) -> None:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
@@ -108,11 +128,18 @@ class Qwen3MLP(nn.Module):
         )
         assert hidden_act == "silu"
         self.act_fn = SiluAndMul()
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
 
     def forward(self, x):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3MLP)")
+        print(f"zml: x.shape={x.shape}")
         gate_up = self.gate_up_proj(x)
+        print(f"zml: gate_up.shape={gate_up.shape}")
         x = self.act_fn(gate_up)
+        print(f"zml: after act_fn, x.shape={x.shape}")
         x = self.down_proj(x)
+        print(f"zml: after down_proj, x.shape={x.shape}")
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}(Qwen3MLP)")
         return x
 
 
@@ -122,7 +149,16 @@ class Qwen3DecoderLayer(nn.Module):
         self,
         config: Qwen3Config,
     ) -> None:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         super().__init__()
+        ## zml add for debug
+        rope_scaling=getattr(config, "rope_scaling", None)
+        #print(f"zml: rope_scaling={rope_scaling},type(rope_scaling)={type(rope_scaling)}")
+        #print(f"zml: config={config}")
+        
+        
+        
+        ################################
         self.self_attn = Qwen3Attention(
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
@@ -132,7 +168,8 @@ class Qwen3DecoderLayer(nn.Module):
             qkv_bias=getattr(config, 'attention_bias', True),
             head_dim=getattr(config, 'head_dim', None),
             rope_theta=getattr(config, "rope_theta", 1000000),
-            rope_scaling=getattr(config, "rope_scaling", None),
+            #rope_scaling=getattr(config, "rope_scaling", None),
+            rope_scaling=None,
         )
         self.mlp = Qwen3MLP(
             hidden_size=config.hidden_size,
@@ -141,6 +178,7 @@ class Qwen3DecoderLayer(nn.Module):
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
 
     def forward(
         self,
@@ -148,13 +186,20 @@ class Qwen3DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})(Qwen3DecoderLayer)")
         if residual is None:
+            print(f"zml: in Qwen3DecoderLayer.forward, before input_layernorm, hidden_states.shape={hidden_states.shape}, residual=None")
             hidden_states, residual = self.input_layernorm(hidden_states), hidden_states
         else:
             hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        print(f"zml: in Qwen3DecoderLayer.forward, after input_layernorm, hidden_states.shape={hidden_states.shape}, residual.shape={residual.shape}, positions.shape={positions.shape}")
         hidden_states = self.self_attn(positions, hidden_states)
+        print(f"zml: in Qwen3DecoderLayer.forward, after self_attn, hidden_states.shape={hidden_states.shape}, positions.shape={positions.shape}")
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
+        print(f"zml: in Qwen3DecoderLayer.forward, after post_attention_layernorm, hidden_states.shape={hidden_states.shape}, residual.shape={residual.shape}")
         hidden_states = self.mlp(hidden_states)
+        print(f"zml: in Qwen3DecoderLayer.forward, after mlp, hidden_states.shape={hidden_states.shape}")
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
         return hidden_states, residual
 
 
@@ -164,21 +209,26 @@ class Qwen3Model(nn.Module):
         self,
         config: Qwen3Config,
     ) -> None:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         super().__init__()
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         self.layers = nn.ModuleList([Qwen3DecoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         hidden_states = self.embed_tokens(input_ids)
+        print(f"zml: positions.shape={positions.shape}, input_ids.shape={input_ids.shape}, hidden_states.shape={hidden_states.shape}")
         residual = None
         for layer in self.layers:
             hidden_states, residual = layer(positions, hidden_states, residual)
         hidden_states, _ = self.norm(hidden_states, residual)
+        print(f"zml: run into finish {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
         return hidden_states
 
 
@@ -195,6 +245,7 @@ class Qwen3ForCausalLM(nn.Module):
         self,
         config: Qwen3Config
     ) -> None:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         super().__init__()
         self.model = Qwen3Model(config)
         self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size)
@@ -206,10 +257,12 @@ class Qwen3ForCausalLM(nn.Module):
         input_ids: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         return self.model(input_ids, positions)
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         return self.lm_head(hidden_states)

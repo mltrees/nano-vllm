@@ -26,6 +26,7 @@ class Scheduler:
         scheduled_seqs = []
         num_seqs = 0
         num_batched_tokens = 0
+        print(f"zml: in schedule, num_seqs={num_seqs}, self.max_num_seqs={self.max_num_seqs}")
         while self.waiting and num_seqs < self.max_num_seqs:
             seq = self.waiting[0]
             if num_batched_tokens + len(seq) > self.max_num_batched_tokens or not self.block_manager.can_allocate(seq):

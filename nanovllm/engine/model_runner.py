@@ -1,3 +1,4 @@
+import sys
 import pickle
 import torch
 import torch.distributed as dist
@@ -11,10 +12,13 @@ from nanovllm.layers.sampler import Sampler
 from nanovllm.utils.context import set_context, get_context, reset_context
 from nanovllm.utils.loader import load_model
 
+from pathlib import Path
+
 
 class ModelRunner:
 
     def __init__(self, config: Config, rank: int, event: Event | list[Event]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         self.config = config
         hf_config = config.hf_config
         self.block_size = config.kvcache_block_size
@@ -30,6 +34,17 @@ class ModelRunner:
         torch.set_default_device("cuda")
         self.model = Qwen3ForCausalLM(hf_config)
         load_model(self.model, config.model)
+        ## zml add for debug
+        first_block = self.model.model.layers[0]
+        print(f"\n---zml:  Qwen3-0.6B 第一个 Transformer Block 结构, 共有{len(self.model.model.layers)}层---")
+        print(first_block)
+        second_block = self.model.model.layers[1]
+        print("\n---zml:  Qwen3-0.6B 第二个 Transformer Block 结构, 共有{len(self.model.model.layers)}层 ---")
+        print(second_block)
+        third_block = self.model.model.layers[2]
+        print("\n---zml:  Qwen3-0.6B 第三个 Transformer Block 结构, 共有{len(self.model.model.layers)}层 ---")
+        print(third_block)
+        ###############################
         self.sampler = Sampler()
         self.warmup_model()
         self.allocate_kv_cache()
@@ -66,6 +81,7 @@ class ModelRunner:
                 break
 
     def read_shm(self):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         assert self.world_size > 1 and self.rank > 0
         self.event.wait()
         n = int.from_bytes(self.shm.buf[0:4], "little")
@@ -74,6 +90,7 @@ class ModelRunner:
         return method_name, args
 
     def write_shm(self, method_name, *args):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         assert self.world_size > 1 and self.rank == 0
         data = pickle.dumps([method_name, *args])
         n = len(data)
@@ -83,12 +100,16 @@ class ModelRunner:
             event.set()
 
     def call(self, method_name, *args):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         if self.world_size > 1 and self.rank == 0:
             self.write_shm(method_name, *args)
         method = getattr(self, method_name, None)
+        
+        print(f"zml: method_name={method_name}, method={method}")
         return method(*args)
 
     def warmup_model(self):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         max_num_batched_tokens, max_model_len = self.config.max_num_batched_tokens, self.config.max_model_len
@@ -118,12 +139,14 @@ class ModelRunner:
                 layer_id += 1
 
     def prepare_block_tables(self, seqs: list[Sequence]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         max_len = max(len(seq.block_table) for seq in seqs)
         block_tables = [seq.block_table + [-1] * (max_len - len(seq.block_table)) for seq in seqs]
         block_tables = torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
         return block_tables
 
     def prepare_prefill(self, seqs: list[Sequence]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         input_ids = []
         positions = []
         cu_seqlens_q = [0]
@@ -162,6 +185,7 @@ class ModelRunner:
         return input_ids, positions
 
     def prepare_decode(self, seqs: list[Sequence]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         input_ids = []
         positions = []
         slot_mapping = []
@@ -180,6 +204,7 @@ class ModelRunner:
         return input_ids, positions
 
     def prepare_sample(self, seqs: list[Sequence]):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         temperatures = []
         for seq in seqs:
             temperatures.append(seq.temperature)
@@ -188,10 +213,13 @@ class ModelRunner:
 
     @torch.inference_mode()
     def run_model(self, input_ids: torch.Tensor, positions: torch.Tensor, is_prefill: bool):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         if is_prefill or self.enforce_eager or input_ids.size(0) > 512:
+            print(f"zml: is_prefill={is_prefill}, self.enforce_eager={self.enforce_eager},input_ids.size(0)={input_ids.size(0)}")
             return self.model.compute_logits(self.model(input_ids, positions))
         else:
             bs = input_ids.size(0)
+            print(f"zml: bs={bs}, in {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}")
             context = get_context()
             graph = self.graphs[next(x for x in self.graph_bs if x >= bs)]
             graph_vars = self.graph_vars
@@ -206,15 +234,20 @@ class ModelRunner:
             return self.model.compute_logits(graph_vars["outputs"][:bs])
 
     def run(self, seqs: list[Sequence], is_prefill: bool) -> list[int]:
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         input_ids, positions = self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
+        print(f"zml: len(input_ids)={len(input_ids)}, len(positions)={len(positions)}, input_ids={input_ids}, positions={positions}")
         temperatures = self.prepare_sample(seqs) if self.rank == 0 else None
+        print(f"zml: temperatures={temperatures}")
         logits = self.run_model(input_ids, positions, is_prefill)
+        print(f"len(logits)={len(logits)}")
         token_ids = self.sampler(logits, temperatures).tolist() if self.rank == 0 else None
         reset_context()
         return token_ids
 
     @torch.inference_mode()
     def capture_cudagraph(self):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         config = self.config
         hf_config = config.hf_config
         max_bs = min(self.config.max_num_seqs, 512)

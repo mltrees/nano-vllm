@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from nanovllm.utils.context import get_context
+import sys
+from pathlib import Path
 
 
 class VocabParallelEmbedding(nn.Module):
@@ -13,6 +15,7 @@ class VocabParallelEmbedding(nn.Module):
         num_embeddings: int,
         embedding_dim: int,
     ):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         super().__init__()
         self.tp_rank = dist.get_rank()
         self.tp_size = dist.get_world_size()
@@ -25,6 +28,7 @@ class VocabParallelEmbedding(nn.Module):
         self.weight.weight_loader = self.weight_loader
 
     def weight_loader(self, param: nn.Parameter, loaded_weight: torch.Tensor):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         param_data = param.data
         shard_size = param_data.size(0)
         start_idx = self.tp_rank * shard_size
@@ -32,10 +36,14 @@ class VocabParallelEmbedding(nn.Module):
         param_data.copy_(loaded_weight)
 
     def forward(self, x: torch.Tensor):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         if self.tp_size > 1:
             mask = (x >= self.vocab_start_idx) & (x < self.vocab_end_idx)
             x = mask * (x - self.vocab_start_idx)
+            print(f"zml: in VocabParallelEmbedding len(mask)={len(mask)}, x.shape={x.shape}")
+        print(f"zml in VocabParallelEmbedding, x.shape={x.shape}")
         y = F.embedding(x, self.weight)
+        print(f"zml: in VocabParallelEmbedding type(self.weight)={type(self.weight)},y.shape={y.shape}")
         if self.tp_size > 1:
             y = mask.unsqueeze(1) * y
             dist.all_reduce(y)
@@ -50,10 +58,12 @@ class ParallelLMHead(VocabParallelEmbedding):
         embedding_dim: int,
         bias: bool = False,
     ):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         assert not bias
         super().__init__(num_embeddings, embedding_dim)
 
     def forward(self, x: torch.Tensor):
+        print(f"zml: run into {Path(sys._getframe().f_code.co_filename).name}:{sys._getframe().f_lineno}({sys._getframe().f_code.co_name})")
         context = get_context()
         if context.is_prefill:
             last_indices = context.cu_seqlens_q[1:] - 1
